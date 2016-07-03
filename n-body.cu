@@ -16,11 +16,15 @@ using namespace cv;
 
 void draw(Mat bg, short x, short y);
 
-__global__ void gravity(int *x, int *y, float *vel_x, float *vel_y)
+__global__ void gravity(int *x, int *y, float *x_vel, float *y_vel, float *x_acc, float *y_acc)
 {
 	int idx = threadIdx.x;
 	int i;
-	double distance, force, acc_x=0, acc_y=0;
+	double distance, force, new_xacc=0, new_yacc=0;
+	
+	x[idx] += (int)( TIME*x_vel[idx] + (TIME*TIME*x_acc[idx])/2);
+	y[idx] += (int)( TIME*y_vel[idx] + (TIME*TIME*y_acc[idx])/2);
+
 	for( i=0; i<N; ++i)
 	{
 		if( idx == i)
@@ -31,19 +35,22 @@ __global__ void gravity(int *x, int *y, float *vel_x, float *vel_y)
 
 		force = -(G*M)/(distance*distance*distance);
 
-		acc_x += force*(x[idx]-x[i]);
-		acc_y += force*(y[idx]-y[i]);
+		new_xacc += force*(x[idx]-x[i]);
+		new_yacc += force*(y[idx]-y[i]);
 	}
 	// __syncthreads();
 
-	// x[idx] = x[idx] + (int)( TIME*vel_x[idx] + (TIME*TIME*acc_x)/2);
-	// y[idx] = y[idx] + (int)( TIME*vel_y[idx] + (TIME*TIME*acc_y)/2);
+	// x[idx] = x[idx] + (int)( TIME*x_vel[idx] + (TIME*TIME*new_xacc)/2);
+	// y[idx] = y[idx] + (int)( TIME*y_vel[idx] + (TIME*TIME*new_yacc)/2);
 	// x[1] = y[1] = 100;
-	x[idx] += (int)( TIME*vel_x[idx] + (TIME*TIME*acc_x)/2);
-	y[idx] += (int)( TIME*vel_y[idx] + (TIME*TIME*acc_y)/2);
+	// x[idx] += (int)( TIME*x_vel[idx] + (TIME*TIME*x_acc)/2);
+	// y[idx] += (int)( TIME*y_vel[idx] + (TIME*TIME*y_acc)/2);
 
-	vel_x[idx] += TIME*acc_x;
-	vel_y[idx] += TIME*acc_y;
+	x_vel[idx] += TIME*(x_acc[idx]+new_xacc)/2;
+	y_vel[idx] += TIME*(y_acc[idx]+new_yacc)/2;
+	x_acc[idx] = new_xacc;
+	y_acc[idx] = new_yacc;
+
 	return;
 }
 
@@ -56,12 +63,15 @@ int main()
 	// cin >> N;
 	// N=2;
 	int *pos_x, *pos_y;
-	float *vel_x, *vel_y;
+	float *x_vel, *y_vel;
+	float *x_acc, *y_acc;
 
 	pos_x = (int *)malloc(N*sizeof(int));
 	pos_y = (int *)malloc(N*sizeof(int));
-	vel_x = (float *)malloc(N*sizeof(float));
-	vel_y = (float *)malloc(N*sizeof(float));
+	x_vel = (float *)malloc(N*sizeof(float));
+	y_vel = (float *)malloc(N*sizeof(float));
+	x_acc = (float *)malloc(N*sizeof(float));
+	y_acc = (float *)malloc(N*sizeof(float));
 
 	srand( (unsigned)time( NULL ) );
 
@@ -91,22 +101,32 @@ int main()
 	pos_x[1] = 500;
 	pos_y[1] = 100;
 
-	vel_x[0] = -sqrt((G*M)/(4*200));
-	vel_x[1] = sqrt((G*M)/(4*200));
-	vel_y[0] = vel_y[1] = 0;
+	x_vel[0] = -sqrt((G*M)/(4*200));
+	x_vel[1] = sqrt((G*M)/(4*200));
+	y_vel[0] = y_vel[1] = 0;
+	x_acc[0] = x_acc[1] = 0;
+	y_acc[0] = - ((x_vel[0])*(x_vel[0]))/400;
+	y_acc[1] = ((x_vel[0])*(x_vel[0]))/400;
 
 	int *dev_x;
 	int *dev_y;
-	float *d_vel_x;
-	float *d_vel_y;
+	float *d_x_vel;
+	float *d_y_vel;
+	float *d_x_acc;
+	float *d_y_acc;
 
 	cudaMalloc((void**)&dev_x, N*sizeof(int));
 	cudaMalloc((void**)&dev_y, N*sizeof(int));
-	cudaMalloc((void**)&d_vel_x, N*sizeof(float));
-	cudaMalloc((void**)&d_vel_y, N*sizeof(float));
+	cudaMalloc((void**)&d_x_vel, N*sizeof(float));
+	cudaMalloc((void**)&d_y_vel, N*sizeof(float));
+	cudaMalloc((void**)&d_x_acc, N*sizeof(float));
+	cudaMalloc((void**)&d_y_acc, N*sizeof(float));
 
 	dim3 blockSize(N,1,1);
 	dim3 gridSize(1,1,1);
+
+	cudaMemcpy(d_x_acc, x_acc, N*sizeof(float), cudaMemcpyHostToDevice);
+	cudaMemcpy(d_y_acc, y_acc, N*sizeof(float), cudaMemcpyHostToDevice);
 
 	while(1)
 	{
@@ -117,21 +137,23 @@ int main()
 
 		for( i=0; i<N; ++i)
 		{
-			cout << pos_x[i] << ' ' << pos_y[i] << "\t\t" << vel_x[i] << '\t' << vel_y[i]<< endl;
+			cout << pos_x[i] << ' ' << pos_y[i] << "\t\t" << x_vel[i] << '\t' << y_vel[i]<< endl;
 		}
 
 		cudaMemcpy(dev_x, pos_x, N*sizeof(int), cudaMemcpyHostToDevice);
 		cudaMemcpy(dev_y, pos_y, N*sizeof(int), cudaMemcpyHostToDevice);
-		cudaMemcpy(d_vel_x, vel_x, N*sizeof(float), cudaMemcpyHostToDevice);
-		cudaMemcpy(d_vel_y, vel_y, N*sizeof(float), cudaMemcpyHostToDevice);
-
-		gravity<<< gridSize, blockSize >>>(dev_x, dev_y, d_vel_x, d_vel_y);
+		cudaMemcpy(d_x_vel, x_vel, N*sizeof(float), cudaMemcpyHostToDevice);
+		cudaMemcpy(d_y_vel, y_vel, N*sizeof(float), cudaMemcpyHostToDevice);
+		
+		gravity<<< gridSize, blockSize >>>(dev_x, dev_y, d_x_vel, d_y_vel, d_x_acc, d_y_acc);
 		cudaDeviceSynchronize();
 
 		cudaMemcpy(pos_x, dev_x, N*sizeof(int), cudaMemcpyDeviceToHost);
 		cudaMemcpy(pos_y, dev_y, N*sizeof(int), cudaMemcpyDeviceToHost);
-		cudaMemcpy(vel_x, d_vel_x, N*sizeof(float), cudaMemcpyDeviceToHost);
-		cudaMemcpy(vel_y, d_vel_y, N*sizeof(float), cudaMemcpyDeviceToHost);
+		cudaMemcpy(x_vel, d_x_vel, N*sizeof(float), cudaMemcpyDeviceToHost);
+		cudaMemcpy(y_vel, d_y_vel, N*sizeof(float), cudaMemcpyDeviceToHost);
+		// cudaMemcpy(x_acc, d_x_acc, N*sizeof(float), cudaMemcpyDeviceToHost);
+		// cudaMemcpy(y_acc, d_y_acc, N*sizeof(float), cudaMemcpyDeviceToHost);
 
 		bg = imread("black bg.jpeg", 1);
 		resize(bg, bg, Size(1300, 700));
@@ -151,8 +173,8 @@ int main()
 
 	cudaFree(dev_x);
 	cudaFree(dev_y);
-	cudaFree(d_vel_x);
-	cudaFree(d_vel_y);
+	cudaFree(d_x_vel);
+	cudaFree(d_y_vel);
 	return 0;
 }
 
