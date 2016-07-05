@@ -8,200 +8,229 @@
 using namespace std;
 using namespace cv;
 
-#define N 8
-#define TIME 0.05
+#define N 1024
+#define TIME 0.02
 #define G 0.0000000000667
 #define M 10000000000000000
-#define epsilon 0.00001
+#define EPSI2 0.0001
 
-void draw(Mat bg, short x, short y);
+void draw(Mat bg, float3 pos);
+float computeColor1(int radius, float maxRadius, float maxColor);
+float computeColor2(int radius, float maxRadius, float maxColor);
+float computeColor3(int radius, float maxRadius, float maxColor);
 
-__global__ void gravity(int *x, int *y, float *x_vel, float *y_vel, float *x_acc, float *y_acc)
+__global__ void gravitational_force(float3 *pos, float3 *vel, float3 *acc)
 {
 	int idx = threadIdx.x;
 	int i;
-	double distance, force, new_xacc=0, new_yacc=0;
-	
-	x[idx] += (int)( TIME*x_vel[idx] + (TIME*TIME*x_acc[idx])/2);
-	y[idx] += (int)( TIME*y_vel[idx] + (TIME*TIME*y_acc[idx])/2);
+	float distSqr, distSixth, force;
+	float3 newAcc;
+	newAcc.x = newAcc.y = newAcc.z = 0;
+	float3 r;
 
-	for( i=0; i<N; ++i)
+	(pos[idx]).x += TIME*( (vel[idx]).x + (TIME*(acc[idx]).x)/2 );
+	(pos[idx]).y += TIME*( (vel[idx]).y + (TIME*(acc[idx]).y)/2 );
+	(pos[idx]).z += TIME*( (vel[idx]).z + (TIME*(acc[idx]).z)/2 );
+
+	for(i=0; i<N; ++i)
 	{
-		if( idx == i)
+		if(idx==i)
 			continue;
-		
-		distance = epsilon + sqrt((double)( (x[idx]-x[i])*(x[idx]-x[i]) + (y[idx]-y[i])*(y[idx]-y[i])));
-		// distance *= 0.001;
 
-		force = -(G*M)/(distance*distance*distance);
+		r.x = (pos[idx]).x - (pos[i]).x;
+		r.y = (pos[idx]).y - (pos[i]).y;
+		r.z = (pos[idx]).z - (pos[i]).z;
 
-		new_xacc += force*(x[idx]-x[i]);
-		new_yacc += force*(y[idx]-y[i]);
+		distSqr = r.x*r.x + r.y*r.y + r.z*r.z + EPSI2;
+		distSixth = distSqr*distSqr*distSqr;
+
+		force = -(G*M)/sqrtf(distSixth);
+
+		newAcc.x += force*(r.x);
+		newAcc.y += force*(r.y);
+		newAcc.z += force*(r.z);
 	}
-	// __syncthreads();
 
-	// x[idx] = x[idx] + (int)( TIME*x_vel[idx] + (TIME*TIME*new_xacc)/2);
-	// y[idx] = y[idx] + (int)( TIME*y_vel[idx] + (TIME*TIME*new_yacc)/2);
-	// x[1] = y[1] = 100;
-	// x[idx] += (int)( TIME*x_vel[idx] + (TIME*TIME*x_acc)/2);
-	// y[idx] += (int)( TIME*y_vel[idx] + (TIME*TIME*y_acc)/2);
-
-	x_vel[idx] += TIME*(x_acc[idx]+new_xacc)/2;
-	y_vel[idx] += TIME*(y_acc[idx]+new_yacc)/2;
-	x_acc[idx] = new_xacc;
-	y_acc[idx] = new_yacc;
-
-	return;
+	(vel[idx]).x += TIME*((acc[idx]).x + newAcc.x)/2; 
+	(vel[idx]).y += TIME*((acc[idx]).y + newAcc.y)/2;
+	(vel[idx]).z += TIME*((acc[idx]).z + newAcc.z)/2;
+	
+	(acc[idx]).x = newAcc.x;
+	(acc[idx]).y = newAcc.y;
+	(acc[idx]).z = newAcc.z;
 }
 
 int main()
 {
 	Mat bg = imread("black bg.jpeg", 1);
-	resize(bg, bg, Size(1300, 700));
+	resize(bg, bg, Size(700, 700));
 	int i, j;
-	bool flag=false;
 	char ch='a';
-	// cin >> N;
-	// N=2;
-	int *pos_x, *pos_y;
-	float *x_vel, *y_vel;
-	float *x_acc, *y_acc;
-
-	pos_x = (int *)malloc(N*sizeof(int));
-	pos_y = (int *)malloc(N*sizeof(int));
-	x_vel = (float *)malloc(N*sizeof(float));
-	y_vel = (float *)malloc(N*sizeof(float));
-	x_acc = (float *)malloc(N*sizeof(float));
-	y_acc = (float *)malloc(N*sizeof(float));
-
+	bool flag=false;
+	float3 *pos, *vel, *acc;
+	
+	pos = new float3[N];
+	vel = new float3[N];
+	acc = new float3[N];
+	
 	srand( (unsigned)time( NULL ) );
 
 	for( i=0; i<N; ++i)
 	{
-		pos_x[i] = ( (rand()%1225) + 12 );
-		pos_y[i] = ( (rand()%675) + 12 );
-		x_vel[i] = rand()%50;
-		y_vel[i] = rand()%50;
-		x_acc[i] = rand()%50;
-		y_acc[i] = rand()%50;
+		(pos[i]).x = (rand()%675);
+		(pos[i]).y = (rand()%675);
+		(pos[i]).z = (rand()%675);
+		(vel[i]).x = rand()%100 + 50;
+		(vel[i]).y = rand()%100 + 50;
+		(vel[i]).z = rand()%100 + 50;
+		(acc[i]).x = rand()%100 + 50;
+		(acc[i]).y = rand()%100 + 50;
+		(acc[i]).z = rand()%100 + 50;
 
-		for(j=0; j<i; ++j)
-		{
-			if(pos_x[i] == pos_x[j] )
-			{
-				pos_x[i] = ( (rand()%1225) + 12 );
-				flag = true;
-			}
-			if( pos_y[i] == pos_y[j] )
-			{
-				pos_y[i] = ( (rand()%675) + 12 );
-				flag = true;
-			}
-			if(flag)
-				j=-1;
-		}
-			
+		// for(j=0; j<i; ++j)
+		// {
+		// 	if((pos[i]).x == (pos[j]).x )
+		// 	{
+		// 		(pos[i]).x = rand()%675;
+		// 		flag = true;
+		// 	}
+		// 	if( (pos[i]).y == (pos[j]).y )
+		// 	{
+		// 		(pos[i]).y = rand()%675;
+		// 		flag = true;
+		// 	}
+		// 	if( (pos[i]).z == (pos[j]).z )
+		// 	{
+		// 		(pos[i]).z = rand()%675;
+		// 		flag = true;
+		// 	}
+		// 	if(flag)
+		// 		j=-1;
+		// }
 	}
 
-	// pos_x[0] = pos_y[0] = 500;
-	// pos_x[1] = 500;
-	// pos_y[1] = 100;
+	float3 *d_pos, *d_vel, *d_acc;
 
-	// x_vel[0] = -sqrt((G*M)/(4*200));
-	// x_vel[1] = sqrt((G*M)/(4*200));
-	// y_vel[0] = y_vel[1] = 0;
-	// x_acc[0] = x_acc[1] = 0;
-	// y_acc[0] = - ((x_vel[0])*(x_vel[0]))/400;
-	// y_acc[1] = ((x_vel[0])*(x_vel[0]))/400;
-
-	int *dev_x;
-	int *dev_y;
-	float *d_x_vel;
-	float *d_y_vel;
-	float *d_x_acc;
-	float *d_y_acc;
-
-	cudaMalloc((void**)&dev_x, N*sizeof(int));
-	cudaMalloc((void**)&dev_y, N*sizeof(int));
-	cudaMalloc((void**)&d_x_vel, N*sizeof(float));
-	cudaMalloc((void**)&d_y_vel, N*sizeof(float));
-	cudaMalloc((void**)&d_x_acc, N*sizeof(float));
-	cudaMalloc((void**)&d_y_acc, N*sizeof(float));
+	cudaMalloc((void**)&d_pos, N*sizeof(float3));
+	cudaMalloc((void**)&d_vel, N*sizeof(float3));
+	cudaMalloc((void**)&d_acc, N*sizeof(float3));
 
 	dim3 blockSize(N,1,1);
 	dim3 gridSize(1,1,1);
 
-	cudaMemcpy(d_x_acc, x_acc, N*sizeof(float), cudaMemcpyHostToDevice);
-	cudaMemcpy(d_y_acc, y_acc, N*sizeof(float), cudaMemcpyHostToDevice);
+	cudaMemcpy(d_pos, pos, N*sizeof(float3), cudaMemcpyHostToDevice);
+	cudaMemcpy(d_vel, vel, N*sizeof(float3), cudaMemcpyHostToDevice);
+	cudaMemcpy(d_acc, acc, N*sizeof(float3), cudaMemcpyHostToDevice);
 
 	while(1)
 	{
-		ch=waitKey(TIME*1000);
-		// ch=waitKey(1000);
-		if( (ch=='q') || (ch=='Q') || (ch==27) || (ch==' ') )
-		{
+		ch = waitKey(TIME*1000);
+		// ch = waitKey(0);
+		if(ch=='q' || ch=='Q' || ch==27)
 			break;
-		}
-		
-		for( i=0; i<N; ++i)
+
+		for(i=0; i<N; ++i)
 		{
-			cout << pos_x[i] << ' ' << pos_y[i] << "\t\t" << x_vel[i] << '\t' << y_vel[i]<< endl;
+			cout << i << ". (" << (pos[i]).x << ',' << (pos[i]).y << ',' << (pos[i]).z << ')' << endl;
 		}
 
-		cudaMemcpy(dev_x, pos_x, N*sizeof(int), cudaMemcpyHostToDevice);
-		cudaMemcpy(dev_y, pos_y, N*sizeof(int), cudaMemcpyHostToDevice);
-		cudaMemcpy(d_x_vel, x_vel, N*sizeof(float), cudaMemcpyHostToDevice);
-		cudaMemcpy(d_y_vel, y_vel, N*sizeof(float), cudaMemcpyHostToDevice);
-		
-		gravity<<< gridSize, blockSize >>>(dev_x, dev_y, d_x_vel, d_y_vel, d_x_acc, d_y_acc);
+		cout << endl;
+
+		gravitational_force<<< gridSize, blockSize >>>(d_pos, d_vel, d_acc);
 		cudaDeviceSynchronize();
 
-		cudaMemcpy(pos_x, dev_x, N*sizeof(int), cudaMemcpyDeviceToHost);
-		cudaMemcpy(pos_y, dev_y, N*sizeof(int), cudaMemcpyDeviceToHost);
-		cudaMemcpy(x_vel, d_x_vel, N*sizeof(float), cudaMemcpyDeviceToHost);
-		cudaMemcpy(y_vel, d_y_vel, N*sizeof(float), cudaMemcpyDeviceToHost);
-		// cudaMemcpy(x_acc, d_x_acc, N*sizeof(float), cudaMemcpyDeviceToHost);
-		// cudaMemcpy(y_acc, d_y_acc, N*sizeof(float), cudaMemcpyDeviceToHost);
+		cudaMemcpy(pos, d_pos, N*sizeof(float3), cudaMemcpyDeviceToHost);
 
 		bg = imread("black bg.jpeg", 1);
-		resize(bg, bg, Size(1300, 700));
-		
-		for( i=0; i<N; ++i)
+		resize(bg, bg, Size(700, 700));
+
+		for(i=0; i<N; ++i)
 		{
-			draw(bg, pos_x[i], pos_y[i]);
+			draw(bg, pos[i]);
 		}
 
 		imshow("N-Bodies", bg);
-		
-		// ch=waitKey(TIME*1000);
-		// ch=waitKey(1000);
-		// if( (ch=='q') || (ch=='Q') || (ch==27) )
-		// 	break;
 	}
 
-	cudaFree(dev_x);
-	cudaFree(dev_y);
-	cudaFree(d_x_vel);
-	cudaFree(d_y_vel);
-	free(pos_x);
-	free(pos_y);
-	free(x_vel);
-	free(y_vel);
-	free(x_acc);
-	free(y_acc);
+	cudaFree(d_pos);
+	cudaFree(d_vel);
+	cudaFree(d_acc);
+	delete pos;
+	delete vel;
+	delete acc;
+
 	return 0;
 }
 
-void draw(Mat bg, short x, short y)
+void draw(Mat bg, float3 pos)
 {
-	circle(bg,Point(x,y),10,Scalar(255,0,0),-1);
-	circle(bg,Point(x,y),9,Scalar(255,32,32),-1);
-	circle(bg,Point(x,y),8,Scalar(255,64,64),-1);
-	circle(bg,Point(x,y),7,Scalar(255,96,96),-1);
-	circle(bg,Point(x,y),6,Scalar(255,128,128),-1);
-	circle(bg,Point(x,y),5,Scalar(255,160,160),-1);
-	circle(bg,Point(x,y),4,Scalar(255,192,192),-1);
-	circle(bg,Point(x,y),3,Scalar(255,224,224),-1);
-	circle(bg,Point(x,y),2,Scalar(255,255,255),-1);
+	if(pos.z > 700 || pos.z < 0 )
+		return;
+
+	// float radius = (-1.0/50)*pos.z + 15;
+	int radius = -(8*(pos.z)*(pos.z)/(700*700)) - ((6*(pos.z))/700) + 15;
+
+	// circle(bg,Point((int)pos.x,(int)pos.y),radius,Scalar(255,0,0),-1, CV_AA);
+
+	for(int i=0; i<=radius; ++i)
+	{
+		// if( pos.z > 350 )
+		// {
+			circle(bg,Point((int)pos.x,(int)pos.y),i,Scalar(0,computeColor1(i, radius, 221),computeColor1(i, radius, 255)),2, CV_AA);
+		// }
+		// else
+		// {
+			// circle(bg,Point((int)pos.x,(int)pos.y),i,Scalar(0,computeColor3(i, radius, 221),computeColor3(i, radius, 255)),2, CV_AA);
+		// }
+	}
+	
+	// radius = 15;
+	// for(int i=1; i<=radius; i+=1)
+	// 	circle(bg,Point(100,100),i,Scalar(computeColor1(i, radius, 225),computeColor1(i, radius, 225),computeColor1(i, radius, 255)),1, CV_AA);
+
+	// for(int i=1; i<=radius; i+=1)
+	// 	circle(bg,Point(200,200),i,Scalar(0,computeColor2(i, radius, 221),computeColor2(i, radius, 255)),1, CV_AA);
+
+	// for(int i=1; i<=radius; i+=1)
+	// 	circle(bg,Point(300,300),i,Scalar(0,computeColor3(i, radius, 221),computeColor3(i, radius, 255)),1, CV_AA);
+
+	// radius = 10;
+	// for(int i=1; i<=radius; i+=1)
+	// 	circle(bg,Point(400,400),i,Scalar(0,computeColor1(i, radius, 221),computeColor1(i, radius, 255)),1, CV_AA);
+
 	return;
+}
+
+// using a linear function
+float computeColor1(int radius, float maxRadius, float maxColor)
+{
+	float a,b,c;
+	
+	b = 1 - maxRadius;
+	a = maxColor/b;
+	c = -(maxColor*maxRadius)/b;
+
+	return ( a*radius + c);		
+}
+
+// using a quadratic function
+float computeColor2(int radius, float maxRadius, float maxColor)
+{
+	float R2 = maxRadius*maxRadius;
+	float b = 1 - R2;
+	float a = maxColor/b;
+	float c = -(maxColor*R2)/b;
+
+	return ( (a*radius*radius) + c);
+}
+
+// using a cubic function
+float computeColor3(int radius, float maxRadius, float maxColor)
+{
+	float R3 = maxRadius*maxRadius*maxRadius;
+	float b = 1-R3;
+	float a = maxColor/b;
+	float c = -(R3*maxColor)/b;
+
+	return ( (a*radius*radius*radius) + c);
 }
