@@ -8,8 +8,8 @@
 using namespace std;
 using namespace cv;
 
-#define N 2
-#define TIME 0.1
+#define N 8
+#define TIME 0.05
 #define G 0.0000000000667
 #define M 10000000000000000
 #define epsilon 0.00001
@@ -58,8 +58,9 @@ int main()
 {
 	Mat bg = imread("black bg.jpeg", 1);
 	resize(bg, bg, Size(1300, 700));
-	int i, j, ch='a';
+	int i, j;
 	bool flag=false;
+	char ch='a';
 	// cin >> N;
 	// N=2;
 	int *pos_x, *pos_y;
@@ -75,38 +76,43 @@ int main()
 
 	srand( (unsigned)time( NULL ) );
 
-	// for( i=0; i<N; ++i)
-	// {
-	// 	pos_x[i] = ( (rand()%1225) + 12 );
-	// 	pos_y[i] = ( (rand()%675) + 12 );
-	// 	for(j=0; j<i; ++j)
-	// 	{
-	// 		if(pos_x[i] == pos_x[j] )
-	// 		{
-	// 			pos_x[i] = ( (rand()%1225) + 12 );
-	// 			flag = true;
-	// 		}
-	// 		if( pos_y[i] == pos_y[j] )
-	// 		{
-	// 			pos_y[i] = ( (rand()%675) + 12 );
-	// 			flag = true;
-	// 		}
-	// 		if(flag)
-	// 			j=-1;
-	// 	}
+	for( i=0; i<N; ++i)
+	{
+		pos_x[i] = ( (rand()%1225) + 12 );
+		pos_y[i] = ( (rand()%675) + 12 );
+		x_vel[i] = rand()%50;
+		y_vel[i] = rand()%50;
+		x_acc[i] = rand()%50;
+		y_acc[i] = rand()%50;
+
+		for(j=0; j<i; ++j)
+		{
+			if(pos_x[i] == pos_x[j] )
+			{
+				pos_x[i] = ( (rand()%1225) + 12 );
+				flag = true;
+			}
+			if( pos_y[i] == pos_y[j] )
+			{
+				pos_y[i] = ( (rand()%675) + 12 );
+				flag = true;
+			}
+			if(flag)
+				j=-1;
+		}
 			
-	// }
+	}
 
-	pos_x[0] = pos_y[0] = 500;
-	pos_x[1] = 500;
-	pos_y[1] = 100;
+	// pos_x[0] = pos_y[0] = 500;
+	// pos_x[1] = 500;
+	// pos_y[1] = 100;
 
-	x_vel[0] = -sqrt((G*M)/(4*200));
-	x_vel[1] = sqrt((G*M)/(4*200));
-	y_vel[0] = y_vel[1] = 0;
-	x_acc[0] = x_acc[1] = 0;
-	y_acc[0] = - ((x_vel[0])*(x_vel[0]))/400;
-	y_acc[1] = ((x_vel[0])*(x_vel[0]))/400;
+	// x_vel[0] = -sqrt((G*M)/(4*200));
+	// x_vel[1] = sqrt((G*M)/(4*200));
+	// y_vel[0] = y_vel[1] = 0;
+	// x_acc[0] = x_acc[1] = 0;
+	// y_acc[0] = - ((x_vel[0])*(x_vel[0]))/400;
+	// y_acc[1] = ((x_vel[0])*(x_vel[0]))/400;
 
 	int *dev_x;
 	int *dev_y;
@@ -133,8 +139,10 @@ int main()
 		ch=waitKey(TIME*1000);
 		// ch=waitKey(1000);
 		if( (ch=='q') || (ch=='Q') || (ch==27) || (ch==' ') )
+		{
 			break;
-
+		}
+		
 		for( i=0; i<N; ++i)
 		{
 			cout << pos_x[i] << ' ' << pos_y[i] << "\t\t" << x_vel[i] << '\t' << y_vel[i]<< endl;
@@ -175,6 +183,12 @@ int main()
 	cudaFree(dev_y);
 	cudaFree(d_x_vel);
 	cudaFree(d_y_vel);
+	free(pos_x);
+	free(pos_y);
+	free(x_vel);
+	free(y_vel);
+	free(x_acc);
+	free(y_acc);
 	return 0;
 }
 
