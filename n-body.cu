@@ -87,12 +87,12 @@ int main()
 		(pos[i]).x = (rand()%(XDIM-25));
 		(pos[i]).y = (rand()%(YDIM-25));
 		(pos[i]).z = (rand()%(ZDIM-25));
-		(vel[i]).x = rand()%100 + 50;
-		(vel[i]).y = rand()%100 + 50;
-		(vel[i]).z = rand()%100 + 50;
-		(acc[i]).x = rand()%100 + 50;
-		(acc[i]).y = rand()%100 + 50;
-		(acc[i]).z = rand()%100 + 50;
+		(vel[i]).x = rand()%151 - 75;
+		(vel[i]).y = rand()%151 - 75;
+		(vel[i]).z = rand()%151 - 75;
+		(acc[i]).x = rand()%11 - 5;
+		(acc[i]).y = rand()%11 - 5;
+		(acc[i]).z = rand()%11 - 5;
 
 		// for(j=0; j<i; ++j)
 		// {
