@@ -15,14 +15,24 @@ using namespace cv;
 #define EPSI2 0.0001
 #define XDIM 700
 #define YDIM 700
-#define ZDIM 3500
+#define ZDIM 700
+#define XMAX 38
+#define YMAX 44 
+#define ZMAX 38
+#define velFactor 8.0f
+#define MAXSTR 256
 
-void draw(Mat bg, float3 pos, int r0, int rmin);
+void draw(Mat bg, float4 pos, int r0, int rmin);
 float computeColor1(int radius, float maxRadius, float fromColor, float toColor);
 float computeColor2(int radius, float maxRadius, float maxColor);
 float computeColor3(int radius, float maxRadius, float maxColor);
+void loadData(char* filename);
+float scalePos(float x, float maxDim, float xMax);
 
-__global__ void gravitational_force(float3 *pos, float3 *vel, float3 *acc)
+float3 *vel, *acc;
+float4 *pos; 
+
+__global__ void gravitational_force(float4 *pos, float3 *vel, float3 *acc)
 {
 	int idx = threadIdx.x;
 	int i;
@@ -51,7 +61,7 @@ __global__ void gravitational_force(float3 *pos, float3 *vel, float3 *acc)
 		distSqr = r.x*r.x + r.y*r.y + r.z*r.z + EPSI2;
 		distSixth = distSqr*distSqr*distSqr;
 
-		force = -(G*M)/sqrtf(distSixth);
+		force = -(G*M*(pos[idx]).w)/sqrtf(distSixth);
 
 		newAcc.x += force*(r.x);
 		newAcc.y += force*(r.y);
@@ -71,61 +81,28 @@ int main()
 {
 	Mat bg = imread("black bg.jpeg", 1);
 	resize(bg, bg, Size(XDIM, YDIM));
-	int i, j;
+	int i;
 	char ch='a';
-	bool flag=false;
-	float3 *pos, *vel, *acc;
-	
-	pos = new float3[N];
+	char filename[] = "dubinski.tab";
+	pos = new float4[N];
 	vel = new float3[N];
 	acc = new float3[N];
 	
 	srand( (unsigned)time( NULL ) );
 
-	for( i=0; i<N; ++i)
-	{
-		(pos[i]).x = (rand()%(XDIM-25));
-		(pos[i]).y = (rand()%(YDIM-25));
-		(pos[i]).z = (rand()%(ZDIM-25));
-		(vel[i]).x = rand()%151 - 75;
-		(vel[i]).y = rand()%151 - 75;
-		(vel[i]).z = rand()%151 - 75;
-		(acc[i]).x = rand()%11 - 5;
-		(acc[i]).y = rand()%11 - 5;
-		(acc[i]).z = rand()%11 - 5;
+	loadData(filename);
 
-		// for(j=0; j<i; ++j)
-		// {
-		// 	if((pos[i]).x == (pos[j]).x )
-		// 	{
-		// 		(pos[i]).x = rand()%675;
-		// 		flag = true;
-		// 	}
-		// 	if( (pos[i]).y == (pos[j]).y )
-		// 	{
-		// 		(pos[i]).y = rand()%675;
-		// 		flag = true;
-		// 	}
-		// 	if( (pos[i]).z == (pos[j]).z )
-		// 	{
-		// 		(pos[i]).z = rand()%675;
-		// 		flag = true;
-		// 	}
-		// 	if(flag)
-		// 		j=-1;
-		// }
-	}
+	float3 *d_vel, *d_acc;
+	float4 *d_pos;
 
-	float3 *d_pos, *d_vel, *d_acc;
-
-	cudaMalloc((void**)&d_pos, N*sizeof(float3));
+	cudaMalloc((void**)&d_pos, N*sizeof(float4));
 	cudaMalloc((void**)&d_vel, N*sizeof(float3));
 	cudaMalloc((void**)&d_acc, N*sizeof(float3));
 
 	dim3 blockSize(N,1,1);
 	dim3 gridSize(1,1,1);
 
-	cudaMemcpy(d_pos, pos, N*sizeof(float3), cudaMemcpyHostToDevice);
+	cudaMemcpy(d_pos, pos, N*sizeof(float4), cudaMemcpyHostToDevice);
 	cudaMemcpy(d_vel, vel, N*sizeof(float3), cudaMemcpyHostToDevice);
 	cudaMemcpy(d_acc, acc, N*sizeof(float3), cudaMemcpyHostToDevice);
 
@@ -138,7 +115,7 @@ int main()
 
 		for(i=0; i<N; ++i)
 		{
-			cout << i << ". (" << (pos[i]).x << ',' << (pos[i]).y << ',' << (pos[i]).z << ')' << endl;
+			cout << i+1 << ". (" << (pos[i]).x << ',' << (pos[i]).y << ',' << (pos[i]).z << ')' << endl;
 		}
 
 		cout << endl;
@@ -146,14 +123,14 @@ int main()
 		gravitational_force<<< gridSize, blockSize >>>(d_pos, d_vel, d_acc);
 		cudaDeviceSynchronize();
 
-		cudaMemcpy(pos, d_pos, N*sizeof(float3), cudaMemcpyDeviceToHost);
+		cudaMemcpy(pos, d_pos, N*sizeof(float4), cudaMemcpyDeviceToHost);
 
 		bg = imread("black bg.jpeg", 1);
 		resize(bg, bg, Size(XDIM, YDIM));
 
 		for(i=0; i<N; ++i)
 		{
-			draw(bg, pos[i], 10, 1);
+			draw(bg, pos[i], 1, 0.1);
 		}
 
 		imshow("N-Bodies", bg);
@@ -169,41 +146,22 @@ int main()
 	return 0;
 }
 
-void draw(Mat bg, float3 pos, int r0, int rmin)
+void draw(Mat bg, float4 pos, int r0, int rmin)
 {
 	if( pos.x < 0-40 || pos.x > XDIM+40 || pos.y < 0-40 || pos.y > YDIM+40)
 		return;
 
 	float radius = ((rmin-r0)*(pos.z))/ZDIM + r0;
 
-	// circle(bg,Point((int)pos.x,(int)pos.y),radius,Scalar(255,0,0),-1, CV_AA);
-
 	for(int i=0; i<=radius; ++i)
 	{
-		// if( pos.z > 350 )
-		// {
-			circle(bg,Point((int)pos.x,(int)pos.y),i,
+		circle(bg,Point((int)pos.x,(int)pos.y),i,
 				 Scalar(computeColor1(i, radius, 47, 1),computeColor1(i, radius, 171, 177),computeColor1(i, radius, 224, 252)),2, CV_AA);
-		// }
-		// else
-		// {
-			// circle(bg,Point((int)pos.x,(int)pos.y),i,Scalar(0,computeColor3(i, radius, 221),computeColor3(i, radius, 255)),2, CV_AA);
-		// }
-	}
+		}
 	
 	// radius = 15;
 	// for(int i=1; i<=radius; i+=1)
 	// 	circle(bg,Point(100,100),i,Scalar(computeColor1(i, radius, 225),computeColor1(i, radius, 225),computeColor1(i, radius, 255)),1, CV_AA);
-
-	// for(int i=1; i<=radius; i+=1)
-	// 	circle(bg,Point(200,200),i,Scalar(0,computeColor2(i, radius, 221),computeColor2(i, radius, 255)),1, CV_AA);
-
-	// for(int i=1; i<=radius; i+=1)
-	// 	circle(bg,Point(300,300),i,Scalar(0,computeColor3(i, radius, 221),computeColor3(i, radius, 255)),1, CV_AA);
-
-	// radius = 10;
-	// for(int i=1; i<=radius; i+=1)
-	// 	circle(bg,Point(400,400),i,Scalar(0,computeColor1(i, radius, 221),computeColor1(i, radius, 255)),1, CV_AA);
 
 	return;
 }
@@ -211,12 +169,6 @@ void draw(Mat bg, float3 pos, int r0, int rmin)
 // using a linear function
 float computeColor1(int radius, float maxRadius, float fromColor, float toColor)
 {
-	// float a,b,c;
-	
-	// b = 1 - maxRadius;
-	// a = maxColor/b;
-	// c = -(maxColor*maxRadius)/b;
-
 	float a = (toColor - fromColor)/(maxRadius-1);
 	float b = fromColor - a;
 
@@ -243,4 +195,68 @@ float computeColor3(int radius, float maxRadius, float maxColor)
 	float c = -(R3*maxColor)/b;
 
 	return ( (a*radius*radius*radius) + c);
+}
+
+// function to load Data from a file
+void loadData(char* filename)
+{
+    int bodies = N;
+    int skip = 49152 / bodies;
+    // int skip = 81920 / bodies;
+    
+    // total 81920 particles
+	// 16384 Gal. Disk
+	// 16384 And. Disk
+	// 8192  Gal. bulge
+	// 8192  And. bulge
+	// 16384 Gal. halo
+	// 16384 And. halo
+
+    FILE *fin;
+    
+    if ((fin = fopen(filename, "r")))
+    {
+    
+    	char buf[MAXSTR];
+    	float v[7];
+    	
+    	int k=0;
+    	for (int i=0; i< bodies; i++,k++)
+    	{
+    		// depend on input size...
+    		for (int j=0; j < skip; j++,k++)
+    			fgets (buf, MAXSTR, fin);	// lead line
+    		
+    		sscanf(buf, "%f %f %f %f %f %f %f", v+0, v+1, v+2, v+3, v+4, v+5, v+6);
+    		
+    		// position
+    		(pos[i]).x = scalePos( v[1], XDIM, XMAX);
+    		(pos[i]).y = scalePos( v[2], YDIM, YMAX);
+    		(pos[i]).z = scalePos( v[3], ZDIM, ZMAX);
+    		
+    		// mass
+    		(pos[i]).w = v[0];
+
+    		// velocity
+    		(vel[i]).x = v[4]*velFactor;;
+    		(vel[i]).y = v[5]*velFactor;;
+    		(vel[i]).z = v[6]*velFactor;;
+
+    		// acceleration
+    		(acc[i]).x = (acc[i]).y = (acc[i]).z = 0;
+    	}   
+    }
+    else
+    {
+    	printf("cannot find file...: %s\n", filename);
+    	exit(0);
+    }
+}
+
+float scalePos(float x, float maxDim, float xMax)
+{
+	float b = maxDim/2;
+	float a = b/xMax;
+
+	return ( a*x + b);
 }
