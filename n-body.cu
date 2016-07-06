@@ -8,14 +8,17 @@
 using namespace std;
 using namespace cv;
 
-#define N 1024
+#define N 512
 #define TIME 0.02
 #define G 0.0000000000667
 #define M 10000000000000000
 #define EPSI2 0.0001
+#define XDIM 700
+#define YDIM 700
+#define ZDIM 3500
 
-void draw(Mat bg, float3 pos);
-float computeColor1(int radius, float maxRadius, float maxColor);
+void draw(Mat bg, float3 pos, int r0, int rmin);
+float computeColor1(int radius, float maxRadius, float fromColor, float toColor);
 float computeColor2(int radius, float maxRadius, float maxColor);
 float computeColor3(int radius, float maxRadius, float maxColor);
 
@@ -41,6 +44,10 @@ __global__ void gravitational_force(float3 *pos, float3 *vel, float3 *acc)
 		r.y = (pos[idx]).y - (pos[i]).y;
 		r.z = (pos[idx]).z - (pos[i]).z;
 
+		r.x *=1000;
+		r.y *=1000;
+		r.z *=1000;
+
 		distSqr = r.x*r.x + r.y*r.y + r.z*r.z + EPSI2;
 		distSixth = distSqr*distSqr*distSqr;
 
@@ -63,7 +70,7 @@ __global__ void gravitational_force(float3 *pos, float3 *vel, float3 *acc)
 int main()
 {
 	Mat bg = imread("black bg.jpeg", 1);
-	resize(bg, bg, Size(700, 700));
+	resize(bg, bg, Size(XDIM, YDIM));
 	int i, j;
 	char ch='a';
 	bool flag=false;
@@ -77,9 +84,9 @@ int main()
 
 	for( i=0; i<N; ++i)
 	{
-		(pos[i]).x = (rand()%675);
-		(pos[i]).y = (rand()%675);
-		(pos[i]).z = (rand()%675);
+		(pos[i]).x = (rand()%(XDIM-25));
+		(pos[i]).y = (rand()%(YDIM-25));
+		(pos[i]).z = (rand()%(ZDIM-25));
 		(vel[i]).x = rand()%100 + 50;
 		(vel[i]).y = rand()%100 + 50;
 		(vel[i]).z = rand()%100 + 50;
@@ -142,11 +149,11 @@ int main()
 		cudaMemcpy(pos, d_pos, N*sizeof(float3), cudaMemcpyDeviceToHost);
 
 		bg = imread("black bg.jpeg", 1);
-		resize(bg, bg, Size(700, 700));
+		resize(bg, bg, Size(XDIM, YDIM));
 
 		for(i=0; i<N; ++i)
 		{
-			draw(bg, pos[i]);
+			draw(bg, pos[i], 10, 1);
 		}
 
 		imshow("N-Bodies", bg);
@@ -162,13 +169,12 @@ int main()
 	return 0;
 }
 
-void draw(Mat bg, float3 pos)
+void draw(Mat bg, float3 pos, int r0, int rmin)
 {
-	if(pos.z > 700 || pos.z < 0 )
+	if( pos.x < 0-40 || pos.x > XDIM+40 || pos.y < 0-40 || pos.y > YDIM+40)
 		return;
 
-	// float radius = (-1.0/50)*pos.z + 15;
-	int radius = -(8*(pos.z)*(pos.z)/(700*700)) - ((6*(pos.z))/700) + 15;
+	float radius = ((rmin-r0)*(pos.z))/ZDIM + r0;
 
 	// circle(bg,Point((int)pos.x,(int)pos.y),radius,Scalar(255,0,0),-1, CV_AA);
 
@@ -176,7 +182,8 @@ void draw(Mat bg, float3 pos)
 	{
 		// if( pos.z > 350 )
 		// {
-			circle(bg,Point((int)pos.x,(int)pos.y),i,Scalar(0,computeColor1(i, radius, 221),computeColor1(i, radius, 255)),2, CV_AA);
+			circle(bg,Point((int)pos.x,(int)pos.y),i,
+				 Scalar(computeColor1(i, radius, 47, 1),computeColor1(i, radius, 171, 177),computeColor1(i, radius, 224, 252)),2, CV_AA);
 		// }
 		// else
 		// {
@@ -202,15 +209,18 @@ void draw(Mat bg, float3 pos)
 }
 
 // using a linear function
-float computeColor1(int radius, float maxRadius, float maxColor)
+float computeColor1(int radius, float maxRadius, float fromColor, float toColor)
 {
-	float a,b,c;
+	// float a,b,c;
 	
-	b = 1 - maxRadius;
-	a = maxColor/b;
-	c = -(maxColor*maxRadius)/b;
+	// b = 1 - maxRadius;
+	// a = maxColor/b;
+	// c = -(maxColor*maxRadius)/b;
 
-	return ( a*radius + c);		
+	float a = (toColor - fromColor)/(maxRadius-1);
+	float b = fromColor - a;
+
+	return ( a*radius + b);		
 }
 
 // using a quadratic function
