@@ -8,7 +8,7 @@
 using namespace std;
 using namespace cv;
 
-#define N 512
+#define N 4096
 #define TIME 0.02
 #define G 0.0000000000667
 #define M 10000000000000000
@@ -32,27 +32,19 @@ float scalePos(float x, float maxDim, float xMax);
 float3 *vel, *acc;
 float4 *pos; 
 
-__global__ void gravitational_force(float4 *pos, float3 *vel, float3 *acc)
+__device__ float3 tile_calculation(float4 *d_pos, int myPos, int i, float3 acc)
 {
-	int idx = threadIdx.x;
-	int i;
 	float distSqr, distSixth, force;
-	float3 newAcc;
-	newAcc.x = newAcc.y = newAcc.z = 0;
 	float3 r;
 
-	(pos[idx]).x += TIME*( (vel[idx]).x + (TIME*(acc[idx]).x)/2 );
-	(pos[idx]).y += TIME*( (vel[idx]).y + (TIME*(acc[idx]).y)/2 );
-	(pos[idx]).z += TIME*( (vel[idx]).z + (TIME*(acc[idx]).z)/2 );
-
-	for(i=0; i<N; ++i)
+	for(int j=i; j<blockDim.x; j++)
 	{
-		if(idx==i)
+		if( myPos == j)
 			continue;
 
-		r.x = (pos[idx]).x - (pos[i]).x;
-		r.y = (pos[idx]).y - (pos[i]).y;
-		r.z = (pos[idx]).z - (pos[i]).z;
+		r.x = (d_pos[myPos]).x - (d_pos[j]).x;
+		r.y = (d_pos[myPos]).y - (d_pos[j]).y;
+		r.z = (d_pos[myPos]).z - (d_pos[j]).z;
 
 		r.x *=1000;
 		r.y *=1000;
@@ -61,11 +53,29 @@ __global__ void gravitational_force(float4 *pos, float3 *vel, float3 *acc)
 		distSqr = r.x*r.x + r.y*r.y + r.z*r.z + EPSI2;
 		distSixth = distSqr*distSqr*distSqr;
 
-		force = -(G*M*(pos[idx]).w)/sqrtf(distSixth);
+		force = -(G*M*(d_pos[myPos]).w)/sqrtf(distSixth);
 
-		newAcc.x += force*(r.x);
-		newAcc.y += force*(r.y);
-		newAcc.z += force*(r.z);
+		acc.x += force*(r.x);
+		acc.y += force*(r.y);
+		acc.z += force*(r.z);
+	}
+	return acc;
+}
+
+__global__ void gravitational_forces(float4 *d_pos, float3 *vel, float3 *acc)
+{
+	int idx = ((blockDim.x)*(blockIdx.x)) + threadIdx.x;
+	float3 newAcc = {0.0f, 0.0f, 0.0f};
+	int tileSize = blockDim.x;
+	int tile=0;
+
+	(d_pos[idx]).x += TIME*( (vel[idx]).x + (TIME*(acc[idx]).x)/2 );
+	(d_pos[idx]).y += TIME*( (vel[idx]).y + (TIME*(acc[idx]).y)/2 );
+	(d_pos[idx]).z += TIME*( (vel[idx]).z + (TIME*(acc[idx]).z)/2 );
+
+	for(int i=0; i<N; i+=tileSize, tile++)
+	{
+		newAcc = tile_calculation(d_pos, idx, i, newAcc);
 	}
 
 	(vel[idx]).x += TIME*((acc[idx]).x + newAcc.x)/2; 
@@ -99,8 +109,8 @@ int main()
 	cudaMalloc((void**)&d_vel, N*sizeof(float3));
 	cudaMalloc((void**)&d_acc, N*sizeof(float3));
 
-	dim3 blockSize(N,1,1);
-	dim3 gridSize(1,1,1);
+	dim3 blockSize(512,1,1);
+	dim3 gridSize(N/512,1,1);
 
 	cudaMemcpy(d_pos, pos, N*sizeof(float4), cudaMemcpyHostToDevice);
 	cudaMemcpy(d_vel, vel, N*sizeof(float3), cudaMemcpyHostToDevice);
@@ -120,7 +130,7 @@ int main()
 
 		cout << endl;
 
-		gravitational_force<<< gridSize, blockSize >>>(d_pos, d_vel, d_acc);
+		gravitational_forces<<< gridSize, blockSize >>>(d_pos, d_vel, d_acc);
 		cudaDeviceSynchronize();
 
 		cudaMemcpy(pos, d_pos, N*sizeof(float4), cudaMemcpyDeviceToHost);
