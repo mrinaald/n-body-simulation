@@ -9,6 +9,7 @@ using namespace std;
 
 float max(float arr[]);
 float min(float arr[]);
+float mode(float arr[]);
 
 int main()
 {
@@ -92,6 +93,7 @@ int main()
     	cout << "minVY = " << min(vy) << endl << endl;
     	cout << "maxVZ = " << max(vz) << endl;
     	cout << "minVZ = " << min(vz) << endl << endl;
+        cout << "Mode = " << mode(z) << endl << endl;
     }
     else
     {
@@ -103,7 +105,6 @@ int main()
 
 float max(float arr[])
 {
-	// float maxValue = FLT_MIN;
 	float maxValue = numeric_limits<float>::min();
 
 	for(int i=0; i<N; ++i)
@@ -124,4 +125,27 @@ float min(float arr[])
 			minValue = arr[i];
 	}
 	return minValue;
+}
+
+float mode(float arr[])
+{
+    const int size=800;
+    int temp[size];
+    int i=0;
+    int n;
+    for(i=0; i<size; ++i)
+        temp[i]=0;
+
+    for(i=0; i<N; ++i)
+    {
+        n = (int)(((arr[i])*10) + 400);             //adding 400 bcoz index cannot be negative
+        temp[n]++;
+    }
+
+    int max=0;
+    for(i=0; i<size; i++)
+        max = (temp[i] > max)?i:max;
+
+    return (max - 400);
+    // return 0.0;
 }
