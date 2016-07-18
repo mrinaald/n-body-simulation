@@ -93,7 +93,9 @@ int main()
     	cout << "minVY = " << min(vy) << endl << endl;
     	cout << "maxVZ = " << max(vz) << endl;
     	cout << "minVZ = " << min(vz) << endl << endl;
-        cout << "Mode = " << mode(z) << endl << endl;
+        cout << "ModeX = " << mode(x) << endl << endl;
+        cout << "ModeY = " << mode(y) << endl << endl;
+        cout << "ModeZ = " << mode(z) << endl << endl;
     }
     else
     {
@@ -129,7 +131,7 @@ float min(float arr[])
 
 float mode(float arr[])
 {
-    const int size=800;
+    const int size=1000;
     int temp[size];
     int i=0;
     int n;
@@ -138,7 +140,7 @@ float mode(float arr[])
 
     for(i=0; i<N; ++i)
     {
-        n = (int)(((arr[i])*10) + 400);             //adding 400 bcoz index cannot be negative
+        n = (int)(((arr[i])*10) + 500);             //adding 500 bcoz index cannot be negative
         temp[n]++;
     }
 
@@ -146,6 +148,6 @@ float mode(float arr[])
     for(i=0; i<size; i++)
         max = (temp[i] > max)?i:max;
 
-    return (max - 400);
+    return ((max - 500))/10;
     // return 0.0;
 }
