@@ -8,14 +8,14 @@
 using namespace std;
 using namespace cv;
 
-#define N 4096
+#define N 40960
 #define TIME 0.02
 #define G 0.0000000000667
 #define M 10000000000000000
 #define EPSI2 0.0001
-#define XDIM 700
-#define YDIM 700
-#define ZDIM 700
+#define XDIM 500
+#define YDIM 500
+#define ZDIM 500
 #define XMAX 38
 #define YMAX 44 
 #define ZMAX 38
@@ -23,11 +23,13 @@ using namespace cv;
 #define MAXSTR 256
 
 void draw(Mat bg, float4 pos, int r0, int rmin);
+float computeColor(char color, float z);
 float computeColor1(int radius, float maxRadius, float fromColor, float toColor);
 float computeColor2(int radius, float maxRadius, float maxColor);
 float computeColor3(int radius, float maxRadius, float maxColor);
 void loadData(char* filename);
 float scalePos(float x, float maxDim, float xMax);
+float calculate_radius(float z, int r0, int rmin);
 
 float3 *vel, *acc;
 float4 *pos; 
@@ -123,12 +125,12 @@ int main()
 		if(ch=='q' || ch=='Q' || ch==27)
 			break;
 
-		for(i=0; i<N; ++i)
-		{
-			cout << i+1 << ". (" << (pos[i]).x << ',' << (pos[i]).y << ',' << (pos[i]).z << ')' << endl;
-		}
+		// for(i=0; i<N; ++i)
+		// {
+		// 	cout << i+1 << ". (" << (pos[i]).x << ',' << (pos[i]).y << ',' << (pos[i]).z << ')' << endl;
+		// }
 
-		cout << endl;
+		// cout << endl;
 
 		gravitational_forces<<< gridSize, blockSize >>>(d_pos, d_vel, d_acc);
 		cudaDeviceSynchronize();
@@ -140,8 +142,10 @@ int main()
 
 		for(i=0; i<N; ++i)
 		{
-			draw(bg, pos[i], 1, 0.1);
+			draw(bg, pos[i], 1.5, 0.5);
 		}
+
+		resize(bg, bg, Size(1000,1000));
 
 		imshow("N-Bodies", bg);
 	}
@@ -161,19 +165,65 @@ void draw(Mat bg, float4 pos, int r0, int rmin)
 	if( pos.x < 0-40 || pos.x > XDIM+40 || pos.y < 0-40 || pos.y > YDIM+40)
 		return;
 
-	float radius = ((rmin-r0)*(pos.z))/ZDIM + r0;
+	float radius = calculate_radius(pos.z, r0, rmin);
 
-	for(int i=0; i<=radius; ++i)
-	{
-		circle(bg,Point((int)pos.x,(int)pos.y),i,
-				 Scalar(computeColor1(i, radius, 47, 1),computeColor1(i, radius, 171, 177),computeColor1(i, radius, 224, 252)),2, CV_AA);
-		}
+	// for(int i=0; i<=radius; ++i)
+	// {
+	// 	circle(bg,Point((int)pos.x,(int)pos.y),i,
+	// 			 Scalar(computeColor1(i, radius, 47, 1),computeColor1(i, radius, 171, 177),computeColor1(i, radius, 224, 252)),2, CV_AA);
+	// 	}
+
+	circle(bg, Point((int)pos.x, (int)pos.y), radius, 
+				Scalar(computeColor('b', pos.z), computeColor('g', pos.z), computeColor('r', pos.z)), -1, CV_AA);
 	
 	// radius = 15;
 	// for(int i=1; i<=radius; i+=1)
 	// 	circle(bg,Point(100,100),i,Scalar(computeColor1(i, radius, 225),computeColor1(i, radius, 225),computeColor1(i, radius, 255)),1, CV_AA);
 
 	return;
+}
+
+float calculate_radius(float z, int r0, int rmin)
+{
+	return ((rmin-r0)*(z))/ZDIM + r0;
+}
+
+float computeColor(char color, float z)
+{
+	int fromColor, toColor;
+	if( z > 100 )
+	{
+		switch(color)
+		{
+			case 'b' :
+				fromColor = 3;
+				toColor = 0;
+				break;
+			case 'g' :
+				fromColor = 179;
+				toColor = 0;
+				break;
+			case 'r' :
+				fromColor = 255;
+				toColor = 0;
+				break;	
+		}
+		float a = (toColor - fromColor)/(100 - ZDIM);
+		float b = fromColor - (100*a);
+		return (a*z + b);
+	}
+	else
+	{
+		switch(color)
+		{
+			case 'b' :
+				return 3;
+			case 'g' :
+				return 179;
+			case 'r' :
+				return 255;
+		}
+	}
 }
 
 // using a linear function
@@ -211,8 +261,12 @@ float computeColor3(int radius, float maxRadius, float maxColor)
 void loadData(char* filename)
 {
     int bodies = N;
-    int skip = 49152 / bodies;
-    // int skip = 81920 / bodies;
+    int skip;
+
+    if( N <= 49152)
+    	skip = 49152 / bodies;
+    else
+    	skip = 81920 / bodies;
     
     // total 81920 particles
 	// 16384 Gal. Disk
