@@ -13,20 +13,17 @@ using namespace cv;
 #define G 0.0000000000667
 #define M 10000000000000000
 #define EPSI2 0.0001
-#define XDIM 500
-#define YDIM 500
-#define ZDIM 500
+#define XDIM 2000
+#define YDIM 2000
+#define ZDIM 2000
 #define XMAX 38
 #define YMAX 44 
 #define ZMAX 38
-#define velFactor 8.0f
+#define velFactor 40.0f
 #define MAXSTR 256
 
 void draw(Mat bg, float4 pos, int r0, int rmin);
 float computeColor(char color, float z);
-float computeColor1(int radius, float maxRadius, float fromColor, float toColor);
-float computeColor2(int radius, float maxRadius, float maxColor);
-float computeColor3(int radius, float maxRadius, float maxColor);
 void loadData(char* filename);
 float scalePos(float x, float maxDim, float xMax);
 float calculate_radius(float z, int r0, int rmin);
@@ -142,7 +139,7 @@ int main()
 
 		for(i=0; i<N; ++i)
 		{
-			draw(bg, pos[i], 1.5, 0.5);
+			draw(bg, pos[i], 1.5, 1);
 		}
 
 		resize(bg, bg, Size(800,800));
@@ -224,37 +221,6 @@ float computeColor(char color, float z)
 				return 255;
 		}
 	}
-}
-
-// using a linear function
-float computeColor1(int radius, float maxRadius, float fromColor, float toColor)
-{
-	float a = (toColor - fromColor)/(maxRadius-1);
-	float b = fromColor - a;
-
-	return ( a*radius + b);		
-}
-
-// using a quadratic function
-float computeColor2(int radius, float maxRadius, float maxColor)
-{
-	float R2 = maxRadius*maxRadius;
-	float b = 1 - R2;
-	float a = maxColor/b;
-	float c = -(maxColor*R2)/b;
-
-	return ( (a*radius*radius) + c);
-}
-
-// using a cubic function
-float computeColor3(int radius, float maxRadius, float maxColor)
-{
-	float R3 = maxRadius*maxRadius*maxRadius;
-	float b = 1-R3;
-	float a = maxColor/b;
-	float c = -(R3*maxColor)/b;
-
-	return ( (a*radius*radius*radius) + c);
 }
 
 // function to load Data from a file
