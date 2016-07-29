@@ -145,7 +145,7 @@ int main()
 			draw(bg, pos[i], 1.5, 0.5);
 		}
 
-		resize(bg, bg, Size(1000,1000));
+		resize(bg, bg, Size(800,800));
 
 		imshow("N-Bodies", bg);
 	}
