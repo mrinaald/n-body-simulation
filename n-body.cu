@@ -8,30 +8,50 @@
 using namespace std;
 using namespace cv;
 
-#define N 40960
-#define NAME "galaxy.tab"
-#define TIME 0.02
-#define G 0.0000000000667
-#define M 10000000000000000
-#define EPSI2 0.0001
-#define XDIM 2000
-#define YDIM 2000
-#define ZDIM 2000
-#define XMAX 38
-#define YMAX 44 
-#define ZMAX 38
-#define velFactor 40.0f
-#define MAXSTR 256
+#define N 40960								// No. of particles in simulation.
+#define NAME "galaxy.tab"					// Name of the dataset file.
+#define TIME 0.02							// Time step between successive computation of kinametics of particles.
+#define G 0.0000000000667					
+#define M 10000000000000000					// Mass factor used to increase the value of force for calculation purposes.
+#define EPSI2 0.0001						// Smallest error in calculation of distance
+#define XDIM 2000							// Dimension in x-direction
+#define YDIM 2000							// Dimension in y-direction
+#define ZDIM 2000							// Dimension in z-direction
+#define XMAX 38								// Maximum absolute value possible for x coordinates(checked from dataset)
+#define YMAX 44 							// Maximum absolute value possible for y coordinates(checked from dataset)
+#define ZMAX 38								// Maximum absolute value possible for z coordinates(checked from dataset)
+#define velFactor 40.0f						
+#define MAXSTR 256							
 
+//----------------------------------------------------------------------------------------------------
+// funtion to draw a circle at position 'pos'. 'r0' and 'rmin' are used for the computation of radius.
+//----------------------------------------------------------------------------------------------------
 void draw(Mat bg, float4 pos, int r0, int rmin);
+
+//----------------------------------------------------------------------------------------------------
+// function to compute the value of color relative to a value fixed at the reference level at ZDIM/2.
+//----------------------------------------------------------------------------------------------------
 float computeColor(char color, float z);
+
 void loadData(char* filename);
+
 float scalePos(float x, float maxDim, float xMax);
+
+//----------------------------------------------------------------------------------------------------
+// function to calculate the radius of particles using a linear function, 
+// where 'r0' is the radius at z=ZDIM/2, and 'rmin' is the radius at z=(ZDIM-1)
+//----------------------------------------------------------------------------------------------------
 float calculate_radius(float z, int r0, int rmin);
+
 
 float3 *vel, *acc;
 float4 *pos; 
 
+
+//-------------------------------------------------------------------------------------------
+// device function to calculate acceleration of a tiled data,
+// updating accelerations in each direction.
+//------------------------------------------------------------------------------------------
 __device__ float3 tile_calculation(float4 *d_pos, int myPos, int i, float3 acc)
 {
 	float distSqr, distSixth, force;
@@ -46,6 +66,7 @@ __device__ float3 tile_calculation(float4 *d_pos, int myPos, int i, float3 acc)
 		r.y = (d_pos[myPos]).y - (d_pos[j]).y;
 		r.z = (d_pos[myPos]).z - (d_pos[j]).z;
 
+		// increasing the distance in each dimension to make them of comparable values.
 		r.x *=1000;
 		r.y *=1000;
 		r.z *=1000;
@@ -53,7 +74,7 @@ __device__ float3 tile_calculation(float4 *d_pos, int myPos, int i, float3 acc)
 		distSqr = r.x*r.x + r.y*r.y + r.z*r.z + EPSI2;
 		distSixth = distSqr*distSqr*distSqr;
 
-		force = -(G*M*(d_pos[myPos]).w)/sqrtf(distSixth);
+		force = -(G*M*(d_pos[j]).w)/sqrtf(distSixth);
 
 		acc.x += force*(r.x);
 		acc.y += force*(r.y);
@@ -62,6 +83,10 @@ __device__ float3 tile_calculation(float4 *d_pos, int myPos, int i, float3 acc)
 	return acc;
 }
 
+//--------------------------------------------------------------------------
+// kernal function to calculate the gravitational force for each particle.
+// and updating velocities using "velocity Verlet method".
+//--------------------------------------------------------------------------
 __global__ void gravitational_forces(float4 *d_pos, float3 *vel, float3 *acc)
 {
 	int idx = ((blockDim.x)*(blockIdx.x)) + threadIdx.x;
@@ -78,6 +103,7 @@ __global__ void gravitational_forces(float4 *d_pos, float3 *vel, float3 *acc)
 		newAcc = tile_calculation(d_pos, idx, i, newAcc);
 	}
 
+	
 	(vel[idx]).x += TIME*((acc[idx]).x + newAcc.x)/2; 
 	(vel[idx]).y += TIME*((acc[idx]).y + newAcc.y)/2;
 	(vel[idx]).z += TIME*((acc[idx]).z + newAcc.z)/2;
@@ -87,9 +113,10 @@ __global__ void gravitational_forces(float4 *d_pos, float3 *vel, float3 *acc)
 	(acc[idx]).z = newAcc.z;
 }
 
+
 int main()
 {
-	Mat bg = imread("black bg.jpeg", 1);
+	Mat bg = imread("space bg.jpeg", 1);
 	resize(bg, bg, Size(XDIM, YDIM));
 	int i;
 	char ch='a';
@@ -104,29 +131,38 @@ int main()
 	float3 *d_vel, *d_acc;
 	float4 *d_pos;
 
+	// allocating memory to device pointers in device memory
 	cudaMalloc((void**)&d_pos, N*sizeof(float4));
 	cudaMalloc((void**)&d_vel, N*sizeof(float3));
 	cudaMalloc((void**)&d_acc, N*sizeof(float3));
 
-	dim3 blockSize(512,1,1);
+	//---------------------------------------------------
+	// initializing of size of block in x dimension only
+	// initializing of size of grid in x dimension only
+	//---------------------------------------------------
+	dim3 blockSize(512,1,1);				
 	dim3 gridSize(N/512,1,1);
 
 	cudaMemcpy(d_pos, pos, N*sizeof(float4), cudaMemcpyHostToDevice);
 	cudaMemcpy(d_vel, vel, N*sizeof(float3), cudaMemcpyHostToDevice);
 	cudaMemcpy(d_acc, acc, N*sizeof(float3), cudaMemcpyHostToDevice);
 
+
+//-------------------------------------------------------------------------------------------
+// waitKey() function is used to introduce delay between successive cycles of calculation. 
+// The argument to waitKey() is in milliseconds
+// if user inputs 'q', 'Q' or 'ESC' key, the program ends.
+//-------------------------------------------------------------------------------------------
 	while(1)
 	{
 		ch = waitKey(TIME*1000);
 		if(ch=='q' || ch=='Q' || ch==27)
 			break;
-
 		gravitational_forces<<< gridSize, blockSize >>>(d_pos, d_vel, d_acc);
 		cudaDeviceSynchronize();
-
 		cudaMemcpy(pos, d_pos, N*sizeof(float4), cudaMemcpyDeviceToHost);
 
-		bg = imread("black bg.jpeg", 1);
+		bg = imread("space bg.jpeg", 1);
 		resize(bg, bg, Size(XDIM, YDIM));
 
 		for(i=0; i<N; ++i)
@@ -135,7 +171,6 @@ int main()
 		}
 
 		resize(bg, bg, Size(800,800));
-
 		imshow("N-Bodies", bg);
 	}
 
@@ -148,7 +183,9 @@ int main()
 
 	return 0;
 }
-
+//--------------------------------------------------------------------------------------
+// function circle() used to draw particles at position (pos.x,pos.y) of radius 'radius'
+//--------------------------------------------------------------------------------------
 void draw(Mat bg, float4 pos, int r0, int rmin)
 {
 	float radius = calculate_radius(pos.z, r0, rmin);
@@ -158,19 +195,28 @@ void draw(Mat bg, float4 pos, int r0, int rmin)
 	
 	return;
 }
-
+//-----------------------------------------------------------------------
+// a linear function used to calculate radius of particle at pos.z
+// 'r0' is the radius at z=ZDIM/2, and 'rmin' is the radius at z=(ZDIM-1)
+//-----------------------------------------------------------------------
 float calculate_radius(float z, int r0, int rmin)
 {
 	return ((rmin-r0)*(z))/ZDIM + r0;
 }
 
+//------------------------------------------------------
+// linear function to calculate color of particle.
+// fromColor is value of that color at z=0
+// toColor is value of that color at z=(ZDIM/2)
+//------------------------------------------------------
 float computeColor(char color, float z)
 {
 	int fromColor, toColor;
-	if( z > (ZDIM/2) )
+	if( z < (ZDIM/2) )
 	{
 		switch(color)
 		{
+			
 			case 'b' :
 				fromColor = 247;
 				toColor = 180;
@@ -184,8 +230,7 @@ float computeColor(char color, float z)
 				toColor = 124;
 				break;	
 		}
-		// float a = (toColor - fromColor)/(100 - ZDIM);
-		// float b = fromColor - (100*a);
+		
 		float a = ((toColor - fromColor)*2)/ZDIM;
 		return (a*z + fromColor);
 	}
@@ -202,28 +247,19 @@ float computeColor(char color, float z)
 		}
 	}
 }
-
+//------------------------------------------------
 // function to load Data from a file
+//------------------------------------------------
 void loadData(char* filename)
 {
     int bodies = N;
     int skip;
-
-    // skip = 2;
 
     if( N <= 49152)
     	skip = 49152 / bodies;
     else
     	skip = 81920 / bodies;
     
-    // total 81920 particles
-	// 16384 Gal. Disk
-	// 16384 And. Disk
-	// 8192  Gal. bulge
-	// 8192  And. bulge
-	// 16384 Gal. halo
-	// 16384 And. halo
-
     FILE *fin;
     
     if ((fin = fopen(filename, "r")))
@@ -237,20 +273,16 @@ void loadData(char* filename)
     	{
     		// depend on input size...
     		for (int j=0; j < skip; j++,k++)
-    			fgets (buf, MAXSTR, fin);	// lead line
+    			fgets (buf, MAXSTR, fin);			// lead line
     		
     		sscanf(buf, "%f %f %f %f %f %f %f", v+0, v+1, v+2, v+3, v+4, v+5, v+6);
     		
-    		// position
-    		(pos[i]).x = scalePos( v[1], XDIM, XMAX);
+    		// position		
+       		(pos[i]).x = scalePos( v[1], XDIM, XMAX);
     		(pos[i]).y = scalePos( v[2], YDIM, YMAX);
     		(pos[i]).z = scalePos( v[3], ZDIM, ZMAX);
     		
-    		// (pos[i]).x = v[1];
-    		// (pos[i]).y = v[2];
-    		// (pos[i]).z = v[3];
-
-    		// mass
+       		// mass
     		(pos[i]).w = v[0];
 
     		// velocity
@@ -258,7 +290,6 @@ void loadData(char* filename)
     		(vel[i]).y = v[5]*velFactor;;
     		(vel[i]).z = v[6]*velFactor;;
 
-    		// acceleration
     		(acc[i]).x = (acc[i]).y = (acc[i]).z = 0;
     	}   
     }
@@ -268,7 +299,9 @@ void loadData(char* filename)
     	exit(0);
     }
 }
-
+//-------------------------------------------------------------
+//function to scale the position of particles to our dimensions
+//----------------------------..........-----------------------
 float scalePos(float x, float maxDim, float xMax)
 {
 	float b = maxDim/2;
