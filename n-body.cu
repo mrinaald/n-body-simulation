@@ -9,6 +9,7 @@ using namespace std;
 using namespace cv;
 
 #define N 40960
+#define NAME "galaxy.tab"
 #define TIME 0.02
 #define G 0.0000000000667
 #define M 10000000000000000
@@ -92,13 +93,12 @@ int main()
 	resize(bg, bg, Size(XDIM, YDIM));
 	int i;
 	char ch='a';
-	char filename[] = "dubinski.tab";
+	char filename[] = NAME;
+
 	pos = new float4[N];
 	vel = new float3[N];
 	acc = new float3[N];
 	
-	srand( (unsigned)time( NULL ) );
-
 	loadData(filename);
 
 	float3 *d_vel, *d_acc;
@@ -118,16 +118,8 @@ int main()
 	while(1)
 	{
 		ch = waitKey(TIME*1000);
-		// ch = waitKey(0);
 		if(ch=='q' || ch=='Q' || ch==27)
 			break;
-
-		// for(i=0; i<N; ++i)
-		// {
-		// 	cout << i+1 << ". (" << (pos[i]).x << ',' << (pos[i]).y << ',' << (pos[i]).z << ')' << endl;
-		// }
-
-		// cout << endl;
 
 		gravitational_forces<<< gridSize, blockSize >>>(d_pos, d_vel, d_acc);
 		cudaDeviceSynchronize();
@@ -139,7 +131,7 @@ int main()
 
 		for(i=0; i<N; ++i)
 		{
-			draw(bg, pos[i], 1.5, 1);
+			draw(bg, pos[i], 2.8, 1.2);
 		}
 
 		resize(bg, bg, Size(800,800));
@@ -159,24 +151,11 @@ int main()
 
 void draw(Mat bg, float4 pos, int r0, int rmin)
 {
-	if( pos.x < 0-40 || pos.x > XDIM+40 || pos.y < 0-40 || pos.y > YDIM+40)
-		return;
-
 	float radius = calculate_radius(pos.z, r0, rmin);
-
-	// for(int i=0; i<=radius; ++i)
-	// {
-	// 	circle(bg,Point((int)pos.x,(int)pos.y),i,
-	// 			 Scalar(computeColor1(i, radius, 47, 1),computeColor1(i, radius, 171, 177),computeColor1(i, radius, 224, 252)),2, CV_AA);
-	// 	}
 
 	circle(bg, Point((int)pos.x, (int)pos.y), radius, 
 				Scalar(computeColor('b', pos.z), computeColor('g', pos.z), computeColor('r', pos.z)), -1, CV_AA);
 	
-	// radius = 15;
-	// for(int i=1; i<=radius; i+=1)
-	// 	circle(bg,Point(100,100),i,Scalar(computeColor1(i, radius, 225),computeColor1(i, radius, 225),computeColor1(i, radius, 255)),1, CV_AA);
-
 	return;
 }
 
@@ -188,37 +167,38 @@ float calculate_radius(float z, int r0, int rmin)
 float computeColor(char color, float z)
 {
 	int fromColor, toColor;
-	if( z > 100 )
+	if( z > (ZDIM/2) )
 	{
 		switch(color)
 		{
 			case 'b' :
-				fromColor = 3;
-				toColor = 0;
+				fromColor = 247;
+				toColor = 180;
 				break;
 			case 'g' :
-				fromColor = 179;
-				toColor = 0;
+				fromColor = 139;
+				toColor = 135;
 				break;
 			case 'r' :
-				fromColor = 255;
-				toColor = 0;
+				fromColor = 111;
+				toColor = 124;
 				break;	
 		}
-		float a = (toColor - fromColor)/(100 - ZDIM);
-		float b = fromColor - (100*a);
-		return (a*z + b);
+		// float a = (toColor - fromColor)/(100 - ZDIM);
+		// float b = fromColor - (100*a);
+		float a = ((toColor - fromColor)*2)/ZDIM;
+		return (a*z + fromColor);
 	}
 	else
 	{
 		switch(color)
 		{
 			case 'b' :
-				return 3;
+				return 180;
 			case 'g' :
-				return 179;
+				return 135;
 			case 'r' :
-				return 255;
+				return 124;
 		}
 	}
 }
@@ -228,6 +208,8 @@ void loadData(char* filename)
 {
     int bodies = N;
     int skip;
+
+    // skip = 2;
 
     if( N <= 49152)
     	skip = 49152 / bodies;
@@ -264,6 +246,10 @@ void loadData(char* filename)
     		(pos[i]).y = scalePos( v[2], YDIM, YMAX);
     		(pos[i]).z = scalePos( v[3], ZDIM, ZMAX);
     		
+    		// (pos[i]).x = v[1];
+    		// (pos[i]).y = v[2];
+    		// (pos[i]).z = v[3];
+
     		// mass
     		(pos[i]).w = v[0];
 
